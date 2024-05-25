@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Places Maps</title>
+  <link rel="stylesheet" href="css/leaflet.css">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/leaflet.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+    integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+    crossorigin="anonymous"></script>
+  <script src="js/xlsx.full.min.js"></script>
+</head>
+
+<body>
+  <div id="map"></div>
+  <div id="mapData"></div>
+  <div id="popup">
+    <p class="fs-1">Bienvenido a Places Maps </p>
+    <p>Ingresa los archivos xslx para procesar la información </br>
+      Los archivos deben contener las columnas: </br>
+      <b> PLACESMAPS_NAME, PLACESMAPS_CORDS </b></br>
+      Las coordenadas deben estar separadas por coma </br>
+      Ejemplo: 19.4284700, -99.1276600 </br>
+      O ser enlaces de google maps </br>
+      Ejemplo: https://www.google.com/maps/place/19.4284700,-99.1276600
+    </p>
+    <form>
+      <button type="button" class="btn btn-primary" id="filesButton" onclick="selectFiles()">Seleccionar
+        archivos</button>
+      <p id="filesLabel"> Ningún archivo seleccionado</p>
+      <input type="file" id="files" name="files[]" accept=".xlsx" multiple>
+      <button type="button" class="btn btn-primary" id="processButton" disabled
+        onclick="processFiles()">Procesar</button>
+    </form>
+  </div>
+  <div id="resultsBackground">
+    <div id="results">
+    </div>
+    <div id="loader">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+
+    let alertHeights = [];
+
+    document.getElementById('files').addEventListener('change', function () {
+      var files = document.getElementById('files').files;
+      var filesLabel = document.getElementById('filesLabel');
+      if (files.length > 0) {
+        filesLabel.innerHTML = files.length + ' archivo(s) seleccionado(s)';
+        document.getElementById('processButton').disabled = false;
+      } else {
+        filesLabel.innerHTML = 'Ningún archivo seleccionado';
+        document.getElementById('processButton').disabled = true;
+      }
+    });
+
+    function selectFiles() {
+      document.getElementById('files').click();
+    }
+
+    function getCoordinates(cords) {
+      const corrdinatesRegex = /([-+]?\d{1,2}(?:\.\d+)?),\s*([-+]?\d{1,3}(?:\.\d+)?)/g;
+      let match = corrdinatesRegex.exec(cords);
+      if (match) {
+        return {
+          latitude: parseFloat(match[1]),
+          longitude: parseFloat(match[2])
+        };
+      }
+    }
+
+    async function processFiles() {
+      var files = document.getElementById('files').files;
+      var filesColunmError = [];
+      var preparedData = [];
+
+      for (var i = 0; i < files.length; i++) {
+        let file = files[i];
+ 
+        try {
+          var data = await readFileAsync(file);
+          var workbook = XLSX.read(data, { type: 'array' });
+          var sheet = workbook.Sheets[workbook.SheetNames[0]];
+          var headers = XLSX.utils.sheet_to_json(sheet, { header: 1 })[0];
+          var rowData = XLSX.utils.sheet_to_json(sheet, { header: 0 });
+
+          if (headers.indexOf('PLACESMAPS_NAME') == -1 || headers.indexOf('PLACESMAPS_CORDS') == -1) {
+            filesColunmError.push(file.name);
+            continue;
+          }
+
+          for (var j = 0; j < rowData.length; j++) {
+            var row = rowData[j];
+            var cords = row['PLACESMAPS_CORDS'];
+            var coordinates = getCoordinates(cords);
+            if (coordinates) {
+              preparedData.push({
+                name: row['PLACESMAPS_NAME'],
+                latitude: coordinates.latitude,
+                longitude: coordinates.longitude,
+                fileName: file.name
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Error processing file:', error);
+        }
+      }
+
+      if (errorHandler(filesColunmError)) {
+        return;
+      }
+      startLoader();
+      uploadData(preparedData);
+    }
+
+    function errorHandler(filesColunmError) {
+      if (filesColunmError.length > 0) {
+        displayError('Los siguientes archivos no contienen las columnas requeridas: ',filesColunmError.join(', '));
+        return true;
+      }
+      return false;
+    }
+
+    function removeAlertHeight(height) {
+      alertHeights = alertHeights.filter(h => h != height);
+    }
+
+    function readFileAsync(file) {
+      return new Promise((resolve, reject) => {
+        let reader = new FileReader();
+        reader.onload = function (e) {
+          resolve(new Uint8Array(reader.result));
+        };
+        reader.onerror = function (e) {
+          reject(e);
+        };
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    function uploadData(data) {
+      fetch('http://localhost:8080/routes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+      }).then(response => response.json())
+        .then(data => {
+          var results = document.getElementById('results');
+          results.innerHTML = '';
+          var homeUrl = getHomeUrl();
+          for (var i = 0; i < data.length; i++) {
+            var route = data[i];
+            var routeElement = document.createElement('div');
+            var url = homeUrl + '?map=' + route.uuid;
+            routeElement.innerHTML = '<b>Archivo: ' + route.fileName + '</b></br>';
+            routeElement.innerHTML += '<a href="' + url + '" target="_blank">' + url +'</a>';
+            results.appendChild(routeElement);
+          }
+          results.innerHTML += '<button type="button" class="btn btn-primary" style="float: right;" onclick="location.reload()">Continuar</button>';
+          document.getElementById('resultsBackground').style.display = 'block';
+          document.getElementById('loader').style.display = 'none';
+          document.getElementById('results').style.display = 'block';
+        })
+        .catch((error) => {
+          displayError('Error al procesar los archivos',error);
+        });
+    }
+
+    function getHomeUrl() {
+      return window.location.href.split('?')[0];
+    }
+
+
+    function startLoader() {
+      document.getElementById('resultsBackground').style.display = 'block';
+      document.getElementById('loader').style.display = 'block';
+    }
+
+    function displayError(message,error) {
+      var results = document.getElementById('results');
+      results.innerHTML = '';
+      var routeElement = document.createElement('div');
+      routeElement.innerHTML = '<b>' + message + '</b></br>';
+      routeElement.innerHTML += '<p>' + error + '</p>';
+      routeElement.innerHTML += '<button type="button" class="btn btn-primary" style="float: right;" onclick="location.reload()">Continuar</button>';
+      results.appendChild(routeElement);
+      document.getElementById('results').style.display = 'block';
+      document.getElementById('resultsBackground').style.display = 'block';
+      document.getElementById('loader').style.display = 'none';
+    }
+
+  </script>
+  <script>
+    var map = L.map('map').setView([19.4284700, -99.1276600], 13);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+  </script>
+  <script>
+    var url = new URL(window.location.href);
+    var uuid = url.searchParams.get("map");
+    if (uuid) {
+      document.getElementById('popup').style.display = 'none';
+      fetch('http://localhost:8080/routes/' + uuid)
+        .then(response => response.json())
+        .then(data => {
+          var places = data.places;
+          var routes = data.routes;
+          for (var i = 0; i < places.length; i++) {
+            var place = places[i];
+            var marker = L.marker([place.latitude, place.longitude]).addTo(map);
+            marker.bindPopup('<b>' + place.name + '</b><br>');
+          }
+          var lastRoutePoint = null;
+          for (var i = 0; i < routes.length; i++) {
+            if (i == 0) {
+              map.setView([routes[i].latitude, routes[i].longitude], 13);
+            }
+            var routePoint = routes[i];
+            if (lastRoutePoint) {
+              var polyline = L.polyline([
+                [lastRoutePoint.latitude, lastRoutePoint.longitude],
+                [routePoint.latitude, routePoint.longitude]
+              ], {
+                color: 'blue'
+              }).addTo(map);
+            }
+            lastRoutePoint = routePoint;
+          }
+          document.getElementById('mapData').style.display = 'block';
+          var mapData = document.getElementById('mapData');
+          var distance = data.distance;
+          if (distance > 1000) {
+            distance = (distance / 1000).toFixed(2) + ' km';
+          } else {
+            distance = distance.toFixed(2) + ' m';
+          }
+          var ceatedAt = new Date(data.createdAt);
+          mapData.innerHTML = '<b>Archivo: ' + data.fileName + '</b></br>';
+          mapData.innerHTML += '<b>Distancia total: ' + distance + '</b></br>';
+          mapData.innerHTML += '<b>Fecha de creación: ' + ceatedAt.toLocaleString() + '</b></br>';
+        });
+    }
+  </script>
+
+
+</body>
+
+</html>

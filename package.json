@@ -1,0 +1,14 @@
+{
+  "name": "travelmaps",
+  "version": "1.0.0",
+  "description": "Frontend for travelmaps",
+  "main": "build.js",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "fs-extra": "^11.2.0",
+    "replace-in-file": "^7.1.0"
+  }
+}
