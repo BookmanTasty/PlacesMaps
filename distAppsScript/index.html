@@ -180,6 +180,7 @@
           longitude: parseFloat(match[2])
         };
       }
+      return null;
     }
 
     async function processFiles() {
@@ -205,13 +206,17 @@
           for (var j = 0; j < rowData.length; j++) {
             var row = rowData[j];
             var cords = row['PLACESMAPS_CORDS'];
+            var date = row['FECHA'];
+            var coach = row['COACH'];
             var coordinates = getCoordinates(cords);
             if (coordinates) {
               preparedData.push({
                 name: row['PLACESMAPS_NAME'],
                 latitude: coordinates.latitude,
                 longitude: coordinates.longitude,
-                fileName: file.name
+                fileName: file.name,
+                date: date,
+                coach: coach
               });
             }
           }
@@ -342,7 +347,7 @@
       for (var i = 0; i < places.length; i++) {
         var place = places[i];
         var marker = L.marker([place.latitude, place.longitude]).addTo(map);
-        marker.bindPopup('<b>' + place.name + '</b><br>');
+        marker.bindPopup('<b>' + place.name + '</b><br> Coach: ' + place.coach + '</br>' + place.date);
       }
       var lastRoutePoint = null;
       for (var i = 0; i < routes.length; i++) {
