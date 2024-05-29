@@ -208,6 +208,7 @@
             var cords = row['PLACESMAPS_CORDS'];
             var date = row['FECHA'];
             var coach = row['COACH'];
+            var tipo = row['TIPO'];
             var coordinates = getCoordinates(cords);
             if (coordinates) {
               preparedData.push({
@@ -216,7 +217,8 @@
                 longitude: coordinates.longitude,
                 fileName: file.name,
                 date: date,
-                coach: coach
+                coach: coach,
+                tipo: tipo
               });
             }
           }
@@ -347,7 +349,7 @@
       for (var i = 0; i < places.length; i++) {
         var place = places[i];
         var marker = L.marker([place.latitude, place.longitude]).addTo(map);
-        marker.bindPopup('<b>' + place.name + '</b><br> Coach: ' + place.coach + '</br>' + place.date);
+        marker.bindPopup('<b>' + place.name + '</b><br> Coach: ' + place.coach + '</br>' + place.date + '</br>' + place.tipo);
       }
       var lastRoutePoint = null;
       for (var i = 0; i < routes.length; i++) {
